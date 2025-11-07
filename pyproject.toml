@@ -1,0 +1,12 @@
+[project]
+name = "kdc"
+version = "0.1.0"
+requires-python = ">=3.13"
+dependencies = [
+    "setuptools>=80.9.0",
+]
+
+[tool.uv.workspace]
+members = [
+    "lib/ModernRobotics/packages/Python",
+]
