@@ -22,6 +22,6 @@ print(m)
 # dI = m * math.pow(0.2, 2)
 # print(dI)
 
-# # print(I + dI + dI)
-# # # print(m * math.pow(0.1, 2))
+# print(I + dI + dI)
+# print(m * math.pow(0.1, 2))
 

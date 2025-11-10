@@ -1,3 +1,5 @@
 .venv
 uv.lock
-.vscode
+.vscode# pixi environments
+.pixi/*
+!.pixi/config.toml
