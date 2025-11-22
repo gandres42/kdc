@@ -12,7 +12,7 @@ preview = ["pixi-build"]
 python = "3.12.*"
 numpy = ">=2.3.4,<3"
 scipy = ">=1.16.3,<2"
-matplotlib = ">=3.10.7,<4"
+matplotlib = ">=3.10.8,<4"
 pinocchio = ">=3.8.0,<4"
 ipykernel = ">=7.1.0,<8"
 notebook = ">=7.4.7,<8"

@@ -60,7 +60,7 @@ thetalist = np.array([np.pi/4, np.pi/4])
 
 
 dthetalist = np.array([0.0, 0.0])
-ddthetalist = np.array([0.0, 0.0])
+ddthetalist = np.array([1.0, 1.0])
 
 # gravity
 g = np.array([0, 0, -10])
@@ -70,11 +70,11 @@ Ftip = np.array([0, 0, 0, 0, 0, 0])
 
 
 torques = mr.InverseDynamics(thetalist, dthetalist, ddthetalist, g, Ftip, m_list, g_list, s_list)
-print(f"T1: {round(torques[0], 4)}")
-print(f"T2: {round(torques[1], 4)}")
+# print(f"T1: {round(torques[0], 4)}")
+# print(f"T2: {round(torques[1], 4)}")
 
 M = mr.MassMatrix(thetalist, m_list, g_list, s_list)
-print(M)
+# print(M)
 
 # DISPLAY ELLIPSOID (CODE ADAPTED FROM SLIDES) --------------------------------
 d, v = np.linalg.eig(M)
