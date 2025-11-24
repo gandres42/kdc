@@ -1,14 +1,16 @@
-import modern_robotics as mr
 import numpy as np
-import time
 import matplotlib.pyplot as plt
-from matplotlib.animation import FuncAnimation
+from typing import NamedTuple
 
-DT = 0.01
+dt = 0.01
+
+class ArmState(NamedTuple):
+    position: np.ndarray[float, float]
+    velocity: np.ndarray[float, float]
+    acceleration: np.ndarray[float, float]
 
 class Arm:
     def __init__(self, Li = 1, ri = 0.5, m1 = 3, m2 = 2, I1 = 2, I2 = 1, g=9.81):
-        # arm properties
         self.L = Li
         self.r1 = ri
         self.r2 = ri        
@@ -16,14 +18,12 @@ class Arm:
         self.m2 = m2
         self.I1 = I1
         self.I2 = I2
-
-        # world properties
         self.g = g
     
-    def inverse_dynamics(self, thetalist, dthetalist, ddthetalist):
-        theta1, theta2 = thetalist
-        dtheta1, dtheta2 = dthetalist
-        ddtheta1, ddtheta2 = ddthetalist
+    def inverse_dynamics(self, state: ArmState):
+        theta1, theta2 = state.position
+        dtheta1, dtheta2 = state.velocity
+        ddtheta1, ddtheta2 = state.acceleration
         
         M = np.matrix([
             [(self.m1 * np.pow(self.r1, 2)) + self.I1 + self.I2 + (self.m2 * (np.pow(self.L, 2) + np.pow(self.r2, 2) + (2 * self.L * self.r2 * np.cos(theta2)))), (self.m2 * self.L * self.r2 * np.cos(theta2)) + (self.m2 * np.pow(self.r2, 2)) + self.I2],
@@ -43,10 +43,10 @@ class Arm:
         
         return tau
     
-    def forward_dynamics(self, thetalist, dthetalist, taulist):
-        theta1, theta2 = thetalist
-        dtheta1, dtheta2 = dthetalist
-        tau1, tau2 = taulist
+    def forward_dynamics(self, state: ArmState, torques):
+        theta1, theta2 = state.position
+        dtheta1, dtheta2 = state.velocity
+        tau1, tau2 = torques
         
         M = np.matrix([
             [(self.m1 * np.pow(self.r1, 2)) + self.I1 + self.I2 + (self.m2 * (np.pow(self.L, 2) + np.pow(self.r2, 2) + (2 * self.L * self.r2 * np.cos(theta2)))), (self.m2 * self.L * self.r2 * np.cos(theta2)) + (self.m2 * np.pow(self.r2, 2)) + self.I2],
@@ -66,43 +66,41 @@ class Arm:
         
         return ddtheta.flatten()
     
-    def plan(self, start, goal, plan_time=2.0):
-        # move arm from start joint angles to goal joint angles using 5th order polynomial trajectory and return position, velocity, and acceleration of joint for all timesteps
-        N = int(plan_time / DT)  # Number of timesteps
+    def plan(self, start, goal, plan_time=2.0) -> list[ArmState]:
+        # number of timestemps
+        n_steps = int(plan_time / dt)
         
-        # Initialize arrays for both joints
-        positions = np.zeros((N, 2))
-        velocities = np.zeros((N, 2))
-        accelerations = np.zeros((N, 2))
+        # Initialize list of states
+        states = []
         
-        # Generate trajectory for each joint independently
-        for joint_idx in range(2):
-            theta_start = start[joint_idx]
-            theta_goal = goal[joint_idx]
+        # Generate trajectory for each timestep
+        for i in range(n_steps):
+            t = i * dt
+            s = t / plan_time  # Normalized time [0, 1]
             
-            # 5th order polynomial trajectory
-            # Boundary conditions: theta(0) = start, theta(T) = goal
-            # dtheta(0) = 0, dtheta(T) = 0
-            # ddtheta(0) = 0, ddtheta(T) = 0
-            for i in range(N):
-                t = i * DT
-                s = t / plan_time  # Normalized time [0, 1]
-                
-                # 5th order polynomial: 10s^3 - 15s^4 + 6s^5
-                # This gives s(0)=0, s(1)=1 with zero velocity and acceleration at endpoints
-                s_t = 10 * s**3 - 15 * s**4 + 6 * s**5
-                ds_t = (30 * s**2 - 60 * s**3 + 30 * s**4) / plan_time
-                dds_t = (60 * s - 180 * s**2 + 120 * s**3) / (plan_time**2)
-                
-                # Interpolate between start and goal
-                positions[i, joint_idx] = theta_start + (theta_goal - theta_start) * s_t
-                velocities[i, joint_idx] = (theta_goal - theta_start) * ds_t
-                accelerations[i, joint_idx] = (theta_goal - theta_start) * dds_t
+            # 5th order polynomial: 10s^3 - 15s^4 + 6s^5
+            # This gives s(0)=0, s(1)=1 with zero velocity and acceleration at endpoints
+            s_t = 10 * s**3 - 15 * s**4 + 6 * s**5
+            ds_t = (30 * s**2 - 60 * s**3 + 30 * s**4) / plan_time
+            dds_t = (60 * s - 180 * s**2 + 120 * s**3) / (plan_time**2)
+            
+            # Compute position, velocity, acceleration for both joints
+            start_arr = np.array(start)
+            goal_arr = np.array(goal)
+            positions = start_arr + (goal_arr - start_arr) * s_t
+            velocities = (goal_arr - start_arr) * ds_t
+            accelerations = (goal_arr - start_arr) * dds_t
+            
+            states.append(ArmState(positions, velocities, accelerations))
         
-        return positions, velocities, accelerations
+        return states
+
+    def embiggen(self):
+        self.m1 = self.m1 * 1.2
+        self.m2 = self.m2 * 1.2
 
 class Sim:
-    def __init__(self, L1=1.0, L2=1.0, dt=DT):
+    def __init__(self, L1=1.0, L2=1.0, dt=dt):
         self.L1 = L1
         self.L2 = L2
         self.dt = dt
@@ -139,14 +137,14 @@ class Sim:
         # Connect key press event
         self.fig.canvas.mpl_connect('key_press_event', self._on_key_press)
         
-    def update_position(self, alpha1, alpha2):
+    def update_position(self, accels):
         # Store accelerations
-        self.alpha1 = alpha1
-        self.alpha2 = alpha2
+        self.alpha1 = accels[0]
+        self.alpha2 = accels[1]
         
         # Update angular velocities using Euler integration
-        self.omega1 += alpha1 * self.dt
-        self.omega2 += alpha2 * self.dt
+        self.omega1 += accels[0] * self.dt
+        self.omega2 += accels[1] * self.dt
         
         # Update angles
         self.theta1 += self.omega1 * self.dt
@@ -173,7 +171,7 @@ class Sim:
         return [x0, x1, x2], [y0, y1, y2]
     
     def get_state(self):
-        return [(self.theta1, self.theta2), (self.omega1, self.omega2), (self.alpha1, self.alpha2)]
+        return ArmState(np.array([self.theta1, self.theta2]), np.array([self.omega1, self.omega2]), np.array([self.alpha1, self.alpha2]))
     
     def set_state(self, theta1, theta2, omega1=0.0, omega2=0.0):
         self.theta1 = theta1
@@ -196,56 +194,43 @@ class Sim:
         
         plt.draw()
         plt.pause(self.dt)
-        
-    def clear_trace(self):
-        self.trace_x = []
-        self.trace_y = []
 
-viz = Sim()
+sim = Sim()
 arm = Arm()
 
-pos, vel, accels = arm.plan((-np.pi/4, 0), (np.pi/4, np.pi/2), 2.0)
-viz.set_state(-np.pi/4, 0)
+# generate motion plan
+states = arm.plan((-np.pi/4, 0), (np.pi/4, np.pi/2), 2.0)
+sim.set_state(-np.pi/4, 0)
 
-# PID controller gains
-Kp = np.array([800.0, 800.0])  # Lower proportional gain
-Kd = np.array([100.0, 100.0])    # Higher derivative gain for better damping
-Ki = np.array([50.0, 50.0])    # Moderate integral gain
+# make link masses 20% bigger
+arm.embiggen()
 
-# Initialize integral error
+# pid controller gains
+Kp = np.array([800.0, 800.0])
+Kd = np.array([100.0, 100.0])
+Ki = np.array([50.0, 50.0])
 integral_error = np.array([0.0, 0.0])
 
 t = 0
-for i in range(pos.shape[0]):
-    t += DT
+for target_state in states:
+    t += dt
     print(f"time: {round(t, 1)}/2.0      ", end="\r")
-    if viz.running:
-        # Get current state
-        positions, velocities, _ = viz.get_state()
-        current_pos = np.array(positions)
-        current_vel = np.array(velocities)
+    if sim.running:
+        # get current state
+        current_state = sim.get_state()
         
-        # Desired state from trajectory
-        desired_pos = pos[i]
-        desired_vel = vel[i]
+        # compute error
+        position_error = target_state.position - current_state.position
+        velocity_error = target_state.velocity - current_state.velocity
+        integral_error += position_error * sim.dt
         
-        # Compute errors
-        position_error = desired_pos - current_pos
-        velocity_error = desired_vel - current_vel
-        integral_error += position_error * viz.dt
-        
-        # PID control law: tau = Kp * e_pos + Kd * e_vel + Ki * integral_error
+        # update torques based on pid error
         controls = Kp * position_error + Kd * velocity_error + Ki * integral_error
         
-        # Compute forward dynamics to get accelerations
-        dynamics = arm.forward_dynamics(
-            current_pos,
-            current_vel,
-            controls
-        )
-        
-        # Update the visualization using forward dynamics
-        viz.update_position(dynamics[0], dynamics[1])
-        viz.draw()
+        # update sim with forward dynamics
+        accels = arm.forward_dynamics(current_state, controls)
+        sim.update_position(accels)
+        sim.draw()
     else:
         break
+print()
