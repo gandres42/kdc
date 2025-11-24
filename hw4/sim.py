@@ -4,75 +4,9 @@ import time
 import matplotlib.pyplot as plt
 from matplotlib.animation import FuncAnimation
 
+DT = 0.01
 
-class ModernArm:
-    def __init__(self):
-        # link lengths
-        self.L1 = 1.0
-        self.L2 = 1.0
-        self.m1 = 2.0
-        self.m2 = 2.0
-
-        # center of mass
-        self.p1 = np.array([self.L1/2, 0, 0])
-        self.p2 = np.array([self.L2/2, 0, 0])
-
-        # link transforms
-        self.m01 = np.array([[1, 0, 0, 0],
-                        [0, 1, 0, 0],
-                        [0, 0, 1, 0],
-                        [0, 0, 0, 1]])
-
-        self.m12 = np.array([[1, 0, 0, 0],
-                        [0, 1, 0, -self.L1],
-                        [0, 0, 1, 0],
-                        [0, 0, 0, 1]])
-
-        self.m23 = np.array([[1, 0, 0, 0],
-                        [0, 1, 0, -self.L1 - self.L2],
-                        [0, 0, 1, 0],
-                        [0, 0, 0, 1]])
-
-        self.m_list = np.array([self.m01, self.m12, self.m23])
-
-        # intertial matrices
-        self.g1 = np.zeros((6, 6))
-        self.g1[0:3, 0:3] = np.array([[0, 0, 0],
-                                [0, 4, 0],
-                                [0, 0, 4]])
-        self.g1[3:6, 3:6] = np.eye(3) * self.m1
-
-        self.g2 = np.zeros((6, 6))
-        self.g2[0:3, 0:3] = np.array([[4, 0, 0],
-                                [0, 4, 0],
-                                [0, 0, 0]])
-        self.g2[3:6, 3:6] = np.eye(3) * self.m2
-
-        self.g_list = np.array([self.g1, self.g2])
-
-        # screw axes
-        self.s1 = np.array([0, 0, 1, 0, self.L1, 0])
-        self.s2 = np.array([0, 0, 1, 0, self.L2, 0])
-        self.s_list = np.array([self.s1, self.s2]).T
-
-        # joint states (position, velocity, and accelerations)
-        self.thetalist = np.array([0, 0])
-        self.dthetalist = np.array([0.0, 0.0])
-        self.ddthetalist = np.array([0.0, 0.0])
-
-        # gravity
-        self.g = np.array([0, 0, -10])
-
-        # no external forces on tip
-        self.Ftip = np.array([0, 0, 0, 0, 0, 0])
-
-    def inverse_dynamics(self, thetalist, dthetalist, ddthetalist):
-        torques = mr.InverseDynamics(thetalist, dthetalist, ddthetalist, self.g, self.Ftip, self.m_list, self.g_list, self.s_list)
-        print(f"T1: {round(torques[0], 4)}")
-        print(f"T2: {round(torques[1], 4)}")
-        # mr.ForwardDynamics()
-
-class ClassyArm:
+class Arm:
     def __init__(self, Li = 1, ri = 0.5, m1 = 3, m2 = 2, I1 = 2, I2 = 1, g=9.81):
         # arm properties
         self.L = Li
@@ -85,40 +19,57 @@ class ClassyArm:
 
         # world properties
         self.g = g
-
-    def inverse_dynamics(self, thetalist: np.ndarray, dthetalist, ddthetalist):
-        theta1, theta2 = thetalist.astype(tuple)
-        dtheta1, dtheta2 = dthetalist.astype(tuple)
+    
+    def inverse_dynamics(self, thetalist, dthetalist, ddthetalist):
+        theta1, theta2 = thetalist
+        dtheta1, dtheta2 = dthetalist
+        ddtheta1, ddtheta2 = ddthetalist
+        
         M = np.matrix([
-            [(self.m1 * np.pow(self.r1, 2)) + self.I1 + self.I2 + (self.m2 * (np.pow(self.L, 2) + np.pow(self.r2, 2) + (2 * self.L * self.r2 * np.cos(theta2)))), (self.m2 * self.L * self.r2 * np.cos(theta2)) + (self.m2 * np.pow(self.r2, 2)) + (self.I2 * self.m2 * np.pow(self.r2, 2)) + self.I2],
-            [(self.m2 * np.pow(self.r2, 2)) + (self.m2 * self.L * self.r2 * np.cos(theta2)) + self.I2, (self.m2 * np.pow(self.r2, 2))]
+            [(self.m1 * np.pow(self.r1, 2)) + self.I1 + self.I2 + (self.m2 * (np.pow(self.L, 2) + np.pow(self.r2, 2) + (2 * self.L * self.r2 * np.cos(theta2)))), (self.m2 * self.L * self.r2 * np.cos(theta2)) + (self.m2 * np.pow(self.r2, 2)) + self.I2],
+            [(self.m2 * np.pow(self.r2, 2)) + (self.m2 * self.L * self.r2 * np.cos(theta2)) + self.I2, (self.m2 * np.pow(self.r2, 2)) + self.I2]
         ])
         c = np.array([
-            [-self.m2 * self.L * self.r2 * dtheta2 * (2 * dtheta2 + dtheta2) * np.sin(dtheta2)],
-            [-self.m2 * self.L * self.r2 * dtheta1 * dtheta2 * np.sin(theta2)]
+            [-self.m2 * self.L * self.r2 * dtheta2 * (2 * dtheta1 + dtheta2) * np.sin(theta2)],
+            [self.m2 * self.L * self.r2 * np.pow(dtheta1, 2) * np.sin(theta2)]
         ])
-        g = np.array([
-            [(self.m1 * self.r1 * np.sin(theta1)) + (self.m2 * self.L * np.sin(theta1)) + (self.m2 * self.r2 * np.sin(theta1 + theta2))],
-            [self.m2 * self.r2 * np.sin(theta1 + theta2)]
+        g_vec = np.array([
+            [self.g * ((self.m1 * self.r1 * np.sin(theta1)) + (self.m2 * self.L * np.sin(theta1)) + (self.m2 * self.r2 * np.sin(theta1 + theta2)))],
+            [self.g * self.m2 * self.r2 * np.sin(theta1 + theta2)]
         ])
-
-        # print(np.dot(M, ddthetalist).T + c + g)
-        return np.dot(M, ddthetalist).T + c + g
-
-class PendulumVisualizer:
-    def __init__(self, L1=1.0, L2=1.0, dt=0.01):
-        """
-        Initialize the 2-link pendulum visualizer.
         
-        Parameters:
-        -----------
-        L1 : float
-            Length of first link
-        L2 : float
-            Length of second link
-        dt : float
-            Time step for integration
-        """
+        ddtheta_vec = np.array([[ddtheta1], [ddtheta2]])
+        tau = np.dot(M, ddtheta_vec) + c + g_vec
+        
+        return tau
+    
+    def forward_dynamics(self, thetalist, dthetalist, taulist):
+        theta1, theta2 = thetalist
+        dtheta1, dtheta2 = dthetalist
+        tau1, tau2 = taulist
+        
+        M = np.matrix([
+            [(self.m1 * np.pow(self.r1, 2)) + self.I1 + self.I2 + (self.m2 * (np.pow(self.L, 2) + np.pow(self.r2, 2) + (2 * self.L * self.r2 * np.cos(theta2)))), (self.m2 * self.L * self.r2 * np.cos(theta2)) + (self.m2 * np.pow(self.r2, 2)) + self.I2],
+            [(self.m2 * np.pow(self.r2, 2)) + (self.m2 * self.L * self.r2 * np.cos(theta2)) + self.I2, (self.m2 * np.pow(self.r2, 2)) + self.I2]
+        ])
+        c = np.array([
+            [-self.m2 * self.L * self.r2 * dtheta2 * (2 * dtheta1 + dtheta2) * np.sin(theta2)],
+            [self.m2 * self.L * self.r2 * np.pow(dtheta1, 2) * np.sin(theta2)]
+        ])
+        g_vec = np.array([
+            [self.g * ((self.m1 * self.r1 * np.sin(theta1)) + (self.m2 * self.L * np.sin(theta1)) + (self.m2 * self.r2 * np.sin(theta1 + theta2)))],
+            [self.g * self.m2 * self.r2 * np.sin(theta1 + theta2)]
+        ])
+        
+        tau_vec = np.array([[tau1], [tau2]])
+        ddtheta = np.linalg.solve(M, tau_vec - c - g_vec)
+        
+        return ddtheta.flatten()
+    
+
+
+class Sim:
+    def __init__(self, L1=1.0, L2=1.0, dt=DT):
         self.L1 = L1
         self.L2 = L2
         self.dt = dt
@@ -139,7 +90,7 @@ class PendulumVisualizer:
         self.ax.grid(True)
         self.ax.set_xlabel('x')
         self.ax.set_ylabel('y')
-        self.ax.set_title('2-Link Pendulum (Press Q to quit)')
+        self.ax.set_title('2-Link Pendulum')
         
         # Create line objects for the pendulum
         self.line, = self.ax.plot([], [], 'o-', lw=3, markersize=10)
@@ -156,16 +107,6 @@ class PendulumVisualizer:
         self.fig.canvas.mpl_connect('key_press_event', self._on_key_press)
         
     def update_position(self, alpha1, alpha2):
-        """
-        Update the pendulum position based on angular accelerations.
-        
-        Parameters:
-        -----------
-        alpha1 : float
-            Angular acceleration of first joint (rad/s^2)
-        alpha2 : float
-            Angular acceleration of second joint (rad/s^2)
-        """
         # Store accelerations
         self.alpha1 = alpha1
         self.alpha2 = alpha2
@@ -185,14 +126,6 @@ class PendulumVisualizer:
             plt.close(self.fig)
         
     def get_positions(self):
-        """
-        Calculate the Cartesian positions of the joints.
-        
-        Returns:
-        --------
-        tuple
-            (x_positions, y_positions) for [base, joint1, joint2]
-        """
         # Base is at origin
         x0, y0 = 0, 0
         
@@ -207,48 +140,15 @@ class PendulumVisualizer:
         return [x0, x1, x2], [y0, y1, y2]
     
     def get_state(self):
-        """
-        Get the current state of the pendulum.
-        
-        Returns:
-        --------
-        dict
-            Dictionary containing:
-            - 'rotations': (theta1, theta2) - joint angles in radians
-            - 'angular_velocities': (omega1, omega2) - angular velocities in rad/s
-            - 'angular_accelerations': (alpha1, alpha2) - angular accelerations in rad/s^2
-        """
         return [(self.theta1, self.theta2), (self.omega1, self.omega2), (self.alpha1, self.alpha2)]
     
     def set_state(self, theta1, theta2, omega1=0.0, omega2=0.0):
-        """
-        Set the state of the pendulum directly.
-        
-        Parameters:
-        -----------
-        theta1 : float
-            First joint angle (rad)
-        theta2 : float
-            Second joint angle (rad)
-        omega1 : float
-            First joint angular velocity (rad/s)
-        omega2 : float
-            Second joint angular velocity (rad/s)
-        """
         self.theta1 = theta1
         self.theta2 = theta2
         self.omega1 = omega1
         self.omega2 = omega2
         
     def draw(self, show_trace=True):
-        """
-        Draw the current state of the pendulum.
-        
-        Parameters:
-        -----------
-        show_trace : bool
-            Whether to show the trace of the end effector
-        """
         x, y = self.get_positions()
         self.line.set_data(x, y)
         
@@ -262,25 +162,101 @@ class PendulumVisualizer:
             self.trace.set_data(self.trace_x, self.trace_y)
         
         plt.draw()
-        plt.pause(0.001)
+        plt.pause(self.dt)
         
     def clear_trace(self):
-        """Clear the end effector trace."""
         self.trace_x = []
         self.trace_y = []
 
-viz = PendulumVisualizer()
-arm = ClassyArm()
-viz.set_state(np.pi/4, 0)
+class Controller:
+    def __init__(self, T=5.0):
+        self.T = T  # Total time for trajectory
+        self.dt = DT  # Time step
+        
+    def plan(self, arm: Arm, start: tuple, goal: tuple, plan_time: float | None = None):
+        # move arm from start joint angles to goal joint angles using 5th order polynomial trajectory and return position, velocity, and acceleration of joint for all timesteps
+        if plan_time is None:
+            plan_time = self.T
+        N = int(plan_time / self.dt)  # Number of timesteps
+        
+        # Initialize arrays for both joints
+        positions = np.zeros((N, 2))
+        velocities = np.zeros((N, 2))
+        accelerations = np.zeros((N, 2))
+        
+        # Generate trajectory for each joint independently
+        for joint_idx in range(2):
+            theta_start = start[joint_idx]
+            theta_goal = goal[joint_idx]
+            
+            # 5th order polynomial trajectory
+            # Boundary conditions: theta(0) = start, theta(T) = goal
+            # dtheta(0) = 0, dtheta(T) = 0
+            # ddtheta(0) = 0, ddtheta(T) = 0
+            for i in range(N):
+                t = i * self.dt
+                s = t / plan_time  # Normalized time [0, 1]
+                
+                # 5th order polynomial: 10s^3 - 15s^4 + 6s^5
+                # This gives s(0)=0, s(1)=1 with zero velocity and acceleration at endpoints
+                s_t = 10 * s**3 - 15 * s**4 + 6 * s**5
+                ds_t = (30 * s**2 - 60 * s**3 + 30 * s**4) / plan_time
+                dds_t = (60 * s - 180 * s**2 + 120 * s**3) / (plan_time**2)
+                
+                # Interpolate between start and goal
+                positions[i, joint_idx] = theta_start + (theta_goal - theta_start) * s_t
+                velocities[i, joint_idx] = (theta_goal - theta_start) * ds_t
+                accelerations[i, joint_idx] = (theta_goal - theta_start) * dds_t
+        
+        return positions, velocities, accelerations
 
-while viz.running:
-    accel = arm.inverse_dynamics(
-        np.array(viz.get_state()[0]),
-        np.array(viz.get_state()[1]),
-        np.array(viz.get_state()[2])
-    )
-    print(viz.get_state())
-    viz.update_position(accel[0, 0], accel[1, 0])
-    viz.draw()
-    time.sleep(0.1)
-print("done")
+viz = Sim()
+arm = Arm()
+controller = Controller()
+
+
+pos, vel, accels = controller.plan(arm, (-np.pi/4, 0), (np.pi/4, np.pi/2), plan_time=2)
+viz.set_state(-np.pi/4, 0)
+
+# PID controller gains
+Kp = np.array([800.0, 800.0])  # Lower proportional gain
+Kd = np.array([100.0, 100.0])    # Higher derivative gain for better damping
+Ki = np.array([50.0, 50.0])    # Moderate integral gain
+
+# Initialize integral error
+integral_error = np.array([0.0, 0.0])
+
+t = 0
+for i in range(pos.shape[0]):
+    t += DT
+    print(f"time: {round(t, 1)}/2.0      ", end="\r")
+    if viz.running:
+        # Get current state
+        positions, velocities, _ = viz.get_state()
+        current_pos = np.array(positions)
+        current_vel = np.array(velocities)
+        
+        # Desired state from trajectory
+        desired_pos = pos[i]
+        desired_vel = vel[i]
+        
+        # Compute errors
+        position_error = desired_pos - current_pos
+        velocity_error = desired_vel - current_vel
+        integral_error += position_error * viz.dt
+        
+        # PID control law: tau = Kp * e_pos + Kd * e_vel + Ki * integral_error
+        controls = Kp * position_error + Kd * velocity_error + Ki * integral_error
+        
+        # Compute forward dynamics to get accelerations
+        dynamics = arm.forward_dynamics(
+            current_pos,
+            current_vel,
+            controls
+        )
+        
+        # Update the visualization using forward dynamics
+        viz.update_position(dynamics[0], dynamics[1])
+        viz.draw()
+    else:
+        break
