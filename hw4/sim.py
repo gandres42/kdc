@@ -66,7 +66,40 @@ class Arm:
         
         return ddtheta.flatten()
     
-
+    def plan(self, start, goal, plan_time=2.0):
+        # move arm from start joint angles to goal joint angles using 5th order polynomial trajectory and return position, velocity, and acceleration of joint for all timesteps
+        N = int(plan_time / DT)  # Number of timesteps
+        
+        # Initialize arrays for both joints
+        positions = np.zeros((N, 2))
+        velocities = np.zeros((N, 2))
+        accelerations = np.zeros((N, 2))
+        
+        # Generate trajectory for each joint independently
+        for joint_idx in range(2):
+            theta_start = start[joint_idx]
+            theta_goal = goal[joint_idx]
+            
+            # 5th order polynomial trajectory
+            # Boundary conditions: theta(0) = start, theta(T) = goal
+            # dtheta(0) = 0, dtheta(T) = 0
+            # ddtheta(0) = 0, ddtheta(T) = 0
+            for i in range(N):
+                t = i * DT
+                s = t / plan_time  # Normalized time [0, 1]
+                
+                # 5th order polynomial: 10s^3 - 15s^4 + 6s^5
+                # This gives s(0)=0, s(1)=1 with zero velocity and acceleration at endpoints
+                s_t = 10 * s**3 - 15 * s**4 + 6 * s**5
+                ds_t = (30 * s**2 - 60 * s**3 + 30 * s**4) / plan_time
+                dds_t = (60 * s - 180 * s**2 + 120 * s**3) / (plan_time**2)
+                
+                # Interpolate between start and goal
+                positions[i, joint_idx] = theta_start + (theta_goal - theta_start) * s_t
+                velocities[i, joint_idx] = (theta_goal - theta_start) * ds_t
+                accelerations[i, joint_idx] = (theta_goal - theta_start) * dds_t
+        
+        return positions, velocities, accelerations
 
 class Sim:
     def __init__(self, L1=1.0, L2=1.0, dt=DT):
@@ -168,54 +201,10 @@ class Sim:
         self.trace_x = []
         self.trace_y = []
 
-class Controller:
-    def __init__(self, T=5.0):
-        self.T = T  # Total time for trajectory
-        self.dt = DT  # Time step
-        
-    def plan(self, arm: Arm, start: tuple, goal: tuple, plan_time: float | None = None):
-        # move arm from start joint angles to goal joint angles using 5th order polynomial trajectory and return position, velocity, and acceleration of joint for all timesteps
-        if plan_time is None:
-            plan_time = self.T
-        N = int(plan_time / self.dt)  # Number of timesteps
-        
-        # Initialize arrays for both joints
-        positions = np.zeros((N, 2))
-        velocities = np.zeros((N, 2))
-        accelerations = np.zeros((N, 2))
-        
-        # Generate trajectory for each joint independently
-        for joint_idx in range(2):
-            theta_start = start[joint_idx]
-            theta_goal = goal[joint_idx]
-            
-            # 5th order polynomial trajectory
-            # Boundary conditions: theta(0) = start, theta(T) = goal
-            # dtheta(0) = 0, dtheta(T) = 0
-            # ddtheta(0) = 0, ddtheta(T) = 0
-            for i in range(N):
-                t = i * self.dt
-                s = t / plan_time  # Normalized time [0, 1]
-                
-                # 5th order polynomial: 10s^3 - 15s^4 + 6s^5
-                # This gives s(0)=0, s(1)=1 with zero velocity and acceleration at endpoints
-                s_t = 10 * s**3 - 15 * s**4 + 6 * s**5
-                ds_t = (30 * s**2 - 60 * s**3 + 30 * s**4) / plan_time
-                dds_t = (60 * s - 180 * s**2 + 120 * s**3) / (plan_time**2)
-                
-                # Interpolate between start and goal
-                positions[i, joint_idx] = theta_start + (theta_goal - theta_start) * s_t
-                velocities[i, joint_idx] = (theta_goal - theta_start) * ds_t
-                accelerations[i, joint_idx] = (theta_goal - theta_start) * dds_t
-        
-        return positions, velocities, accelerations
-
 viz = Sim()
 arm = Arm()
-controller = Controller()
 
-
-pos, vel, accels = controller.plan(arm, (-np.pi/4, 0), (np.pi/4, np.pi/2), plan_time=2)
+pos, vel, accels = arm.plan((-np.pi/4, 0), (np.pi/4, np.pi/2), 2.0)
 viz.set_state(-np.pi/4, 0)
 
 # PID controller gains
