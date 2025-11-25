@@ -1,5 +1,6 @@
 # Collaborated with Clement Cantil
-# Generative AI was used to aid in writing matplotlib visualizations only
+# Generative AI was used to aid in writing some matplotlib visualizations
+# Run with flag -s to enable sim visualization
 
 import numpy as np
 import matplotlib.pyplot as plt
