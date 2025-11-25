@@ -5,7 +5,6 @@ import numpy as np
 import matplotlib.pyplot as plt
 from typing import NamedTuple
 import argparse
-import csv
 
 dt = 0.01
 
@@ -222,7 +221,7 @@ class Sim:
         plt.draw()
         plt.pause(self.dt)
 
-def sim(viz=False):
+def main(viz=False):
     # region: setup
 
     # create arm and sim
@@ -254,7 +253,8 @@ def sim(viz=False):
     Kp = np.array(np.full(2, 1.0 * gain))
     Ki = np.array(np.full(2, 0.1 * gain))
     Kd = np.array(np.full(2, 0.025 * gain))
-
+    print(f"pid gains - Kp: {Kp}, Ki: {Ki}, Kd: {Kd}")
+    
     # variable storage for plotting
     actual_states = []
     torques = []
@@ -385,4 +385,4 @@ if __name__ == "__main__":
     viz = False
     if args.sim:
         viz = True
-    sim(viz)
+    main(viz)
