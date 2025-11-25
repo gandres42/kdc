@@ -1,6 +1,10 @@
+# Collaborated with Clement Cantil
+# Generative AI was used to aid in writing matplotlib visualizations
+
 import numpy as np
 import matplotlib.pyplot as plt
 from typing import NamedTuple
+import argparse
 
 dt = 0.01
 
@@ -97,7 +101,7 @@ class Arm:
         
         return states
 
-    def embiggen(self):
+    def embiggen_links(self):
         """
         Increases arm weights by 20%.
         """
@@ -105,7 +109,7 @@ class Arm:
         self.m2 = self.m2 * 1.2
 
 class Sim:
-    def __init__(self, L1=1.0, L2=1.0, dt=dt):
+    def __init__(self, L1=1.0, L2=1.0, dt=dt, viz=True):
         self.L1 = L1
         self.L2 = L2
         self.dt = dt
@@ -118,30 +122,31 @@ class Sim:
         self.alpha1 = 0.0  # First joint angular acceleration
         self.alpha2 = 0.0  # Second joint angular acceleration
         
-        # Set up the plot
-        self.fig, self.ax = plt.subplots(figsize=(8, 8))
-        self.ax.set_xlim(-2.5, 2.5)
-        self.ax.set_ylim(-2.5, 2.5)
-        self.ax.set_aspect('equal')
-        self.ax.grid(True)
-        self.ax.set_xlabel('x')
-        self.ax.set_ylabel('y')
-        self.ax.set_title('2-Link Pendulum')
+        if viz:
+            # Set up the plot
+            self.fig, self.ax = plt.subplots(figsize=(8, 8))
+            self.ax.set_xlim(-2.5, 2.5)
+            self.ax.set_ylim(-2.5, 2.5)
+            self.ax.set_aspect('equal')
+            self.ax.grid(True)
+            self.ax.set_xlabel('x')
+            self.ax.set_ylabel('y')
+            self.ax.set_title('2-Link Pendulum')
         
-        # Create line objects for the pendulum
-        self.line, = self.ax.plot([], [], 'o-', lw=3, markersize=10)
-        self.trace, = self.ax.plot([], [], 'r-', lw=1, alpha=0.3)
-        
+            # Create line objects for the pendulum
+            self.line, = self.ax.plot([], [], 'o-', lw=3, markersize=10)
+            self.trace, = self.ax.plot([], [], 'r-', lw=1, alpha=0.3)
+
+            # Connect key press event
+            self.fig.canvas.mpl_connect('key_press_event', self._on_key_press)
+            
         # Trace history
         self.trace_x = []
         self.trace_y = []
         
         # Flag for quitting
         self.running = True
-        
-        # Connect key press event
-        self.fig.canvas.mpl_connect('key_press_event', self._on_key_press)
-        
+
     def update_position(self, accels):
         # Store accelerations
         self.alpha1 = accels[0]
@@ -203,43 +208,149 @@ class Sim:
         plt.draw()
         plt.pause(self.dt)
 
-sim = Sim()
-arm = Arm()
+def sim():
+    sim = Sim()
+    arm = Arm()
 
-# generate motion plan
-start_state = ArmState(
-    np.array([-np.pi/4, 0]),
-    np.array([0, 0]),
-    np.array([0, 0])
-)
-target_state = ArmState(
-    np.array([np.pi/4, np.pi/2]),
-    np.array([0, 0]),
-    np.array([0, 0])
-)
-duration = 2.00
+    # generate motion plan
+    start_state = ArmState(
+        np.array([-np.pi/4, 0]),
+        np.array([0, 0]),
+        np.array([0, 0])
+    )
+    target_state = ArmState(
+        np.array([np.pi/4, np.pi/2]),
+        np.array([0, 0]),
+        np.array([0, 0])
+    )
+    duration = 2.00
 
-states = arm.trajectory(start_state, target_state, duration)
-sim.set_state(start_state)
+    states = arm.trajectory(start_state, target_state, duration)
+    sim.set_state(start_state)
 
-# make link masses 20% bigger
-arm.embiggen()
+    # make link masses 20% bigger
+    arm.embiggen_links()
 
-# pid controller gains
-factor = 120
-Kp = np.array(np.full(2, 8 * factor))
-Ki = np.array(np.full(2, 4 * factor))
-Kd = np.array(np.full(2, 1 * factor))
+    # pid controller gains
+    factor = 120
+    Kp = np.array(np.full(2, 8 * factor))
+    Ki = np.array(np.full(2, 4 * factor))
+    Kd = np.array(np.full(2, 0.5 * factor))
+    print(f"PID Gains - Kp: {Kp}, Ki: {Ki}, Kd: {Kd}")
 
-integral_error = np.array([0.0, 0.0])
+    integral_error = np.array([0.0, 0.0])
 
-t = 0
-for state in states:
-    t += dt
-    print(f"time: {t:.2f}/{duration:.2f}", end="\r")
-    if sim.running:
+    t = 0
+    for state in states:
+        t += dt
+        print(f"time: {t:.2f}/{duration:.2f}", end="\r")
+        if sim.running:
+            # get current state
+            current_state = sim.get_state()
+            
+            # compute error
+            position_error = state.position - current_state.position
+            velocity_error = state.velocity - current_state.velocity
+            integral_error += position_error * sim.dt
+            
+            # update torques based on pid error
+            torques = Kp * position_error + Kd * velocity_error + Ki * integral_error
+            
+            # update sim with forward dynamics
+            accels = arm.forward_dynamics(current_state, torques)
+            sim.update_position(accels)
+            sim.draw()
+        else:
+            break
+    print()
+    final_state = sim.get_state()
+
+    # Error summary
+    print(f"Target Position:  [{target_state.position[0]:.4f}, {target_state.position[1]:.4f}]")
+    print(f"Final Position:   [{final_state.position[0]:.4f}, {final_state.position[1]:.4f}]")
+    position_error = target_state.position - final_state.position
+    print(f"Position Error:   [{position_error[0]:.4f}, {position_error[1]:.4f}]")
+    print("-" * 50)
+    print(f"Target Velocity:  [{target_state.velocity[0]:.4f}, {target_state.velocity[1]:.4f}]")
+    print(f"Final Velocity:   [{final_state.velocity[0]:.4f}, {final_state.velocity[1]:.4f}]")
+    velocity_error = target_state.velocity - final_state.velocity
+    print(f"Velocity Error:   [{velocity_error[0]:.4f}, {velocity_error[1]:.4f}]")
+
+def plots():
+    sim = Sim(viz=False)
+    arm = Arm()
+
+    # generate motion plan
+    start_state = ArmState(
+        np.array([-np.pi/4, 0]),
+        np.array([0, 0]),
+        np.array([0, 0])
+    )
+    target_state = ArmState(
+        np.array([np.pi/4, np.pi/2]),
+        np.array([0, 0]),
+        np.array([0, 0])
+    )
+    duration = 2.00
+
+    states = arm.trajectory(start_state, target_state, duration)
+    sim.set_state(start_state)
+
+    # make link masses 20% bigger
+    arm.embiggen_links()
+
+    # pid controller gains
+    factor = 120
+    Kp = np.array(np.full(2, 8 * factor))
+    Ki = np.array(np.full(2, 4 * factor))
+    Kd = np.array(np.full(2, 0.5 * factor))
+    print(f"PID Gains - Kp: {Kp}, Ki: {Ki}, Kd: {Kd}")
+
+    integral_error = np.array([0.0, 0.0])
+
+    # store recorded data
+    time_history = []
+    expected_theta1 = []
+    expected_theta2 = []
+    actual_theta1 = []
+    actual_theta2 = []
+    expected_ee_x = []
+    expected_ee_y = []
+    actual_ee_x = []
+    actual_ee_y = []
+    torque1_history = []
+    torque2_history = []
+
+    # copied from sim get_arm_positions
+    def get_arm_positions(state, L1=1.0, L2=1.0):
+        theta1, theta2 = state.position
+        x0, y0 = 0, 0
+        x1 = L1 * np.sin(theta1)
+        y1 = -L1 * np.cos(theta1)
+        x2 = x1 + L2 * np.sin(theta1 + theta2)
+        y2 = y1 - L2 * np.cos(theta1 + theta2)
+        return [x0, x1, x2], [y0, y1, y2]
+
+    start_state = sim.get_state()
+    t = 0
+    for state in states:
         # get current state
         current_state = sim.get_state()
+        
+        # record expected and actual positions
+        time_history.append(t)
+        expected_theta1.append(state.position[0])
+        expected_theta2.append(state.position[1])
+        actual_theta1.append(current_state.position[0])
+        actual_theta2.append(current_state.position[1])
+        
+        # record expected and actual end effector positions
+        exp_x, exp_y = get_arm_positions(state)
+        act_x, act_y = get_arm_positions(current_state)
+        expected_ee_x.append(exp_x[-1])
+        expected_ee_y.append(exp_y[-1])
+        actual_ee_x.append(act_x[-1])
+        actual_ee_y.append(act_y[-1])
         
         # compute error
         position_error = state.position - current_state.position
@@ -248,23 +359,98 @@ for state in states:
         
         # update torques based on pid error
         torques = Kp * position_error + Kd * velocity_error + Ki * integral_error
+        torque1_history.append(torques[0])
+        torque2_history.append(torques[1])
         
         # update sim with forward dynamics
         accels = arm.forward_dynamics(current_state, torques)
         sim.update_position(accels)
-        sim.draw()
-    else:
-        break
-print()
-final_state = sim.get_state()
+        t += dt
 
-# Error summary
-print(f"Target Position:  [{target_state.position[0]:.4f}, {target_state.position[1]:.4f}]")
-print(f"Final Position:   [{final_state.position[0]:.4f}, {final_state.position[1]:.4f}]")
-position_error = target_state.position - final_state.position
-print(f"Position Error:   [{position_error[0]:.4f}, {position_error[1]:.4f}]")
-print("-" * 50)
-print(f"Target Velocity:  [{target_state.velocity[0]:.4f}, {target_state.velocity[1]:.4f}]")
-print(f"Final Velocity:   [{final_state.velocity[0]:.4f}, {final_state.velocity[1]:.4f}]")
-velocity_error = target_state.velocity - final_state.velocity
-print(f"Velocity Error:   [{velocity_error[0]:.4f}, {velocity_error[1]:.4f}]")
+    # region: plotting
+
+    # get final state
+    final_state = sim.get_state()
+    
+    # create subplots
+    fig, axes = plt.subplots(2, 3, figsize=(15, 10))
+    ax1, ax2, ax5 = axes[0]
+    ax3, ax4, ax6 = axes[1]
+    
+    # plot start state
+    x_start, y_start = get_arm_positions(start_state)
+    ax1.plot(x_start, y_start, 'o-', lw=3, markersize=10, color='blue')
+    ax1.set_xlim(-2, 2)
+    ax1.set_ylim(-2, 2)
+    ax1.set_aspect('equal')
+    ax1.grid(True)
+    ax1.set_xlabel('x')
+    ax1.set_ylabel('y')
+    ax1.set_title('Start')
+    
+    # plot final state
+    x_final, y_final = get_arm_positions(final_state)
+    ax2.plot(x_final, y_final, 'o-', lw=3, markersize=10, color='blue')
+    ax2.set_xlim(-2, 2)
+    ax2.set_ylim(-2, 2)
+    ax2.set_aspect('equal')
+    ax2.grid(True)
+    ax2.set_xlabel('x')
+    ax2.set_ylabel('y')
+    ax2.set_title('End')
+    
+    # plot expected vs actual for both joints on one plot
+    ax3.plot(time_history, expected_theta1, 'g--', label='Joint 1 Expected')
+    ax3.plot(time_history, actual_theta1, 'g-', label='Joint 1 Actual')
+    ax3.plot(time_history, expected_theta2, 'r--', label='Joint 2 Expected')
+    ax3.plot(time_history, actual_theta2, 'r-', label='Joint 2 Actual')
+    ax3.set_xlabel('Time (s)')
+    ax3.set_ylabel('Angle (rad)')
+    ax3.set_title('Expected vs Actual Joint Angles')
+    ax3.legend()
+    ax3.grid(True)
+    
+    # plot expected vs actual end effector position
+    ax4.plot(expected_ee_x, expected_ee_y, 'g--', label='Expected', linewidth=2)
+    ax4.plot(actual_ee_x, actual_ee_y, 'r-', label='Actual', linewidth=2)
+    ax4.plot(expected_ee_x[0], expected_ee_y[0], 'go', markersize=10, label='Start')
+    ax4.plot(expected_ee_x[-1], expected_ee_y[-1], 'g^', markersize=10, label='Expected End')
+    ax4.plot(actual_ee_x[-1], actual_ee_y[-1], 'r^', markersize=10, label='Actual End')
+    ax4.set_xlabel('x')
+    ax4.set_ylabel('y')
+    ax4.set_title('End Effector Position')
+    ax4.legend()
+    ax4.grid(True)
+    
+    # hide unused subplot
+    ax5.axis('off')
+    
+    # plot computed torques over time
+    ax6.plot(time_history, torque1_history, 'g-', label='Joint 1')
+    ax6.plot(time_history, torque2_history, 'r-', label='Joint 2')
+    ax6.set_xlabel('Time (s)')
+    ax6.set_ylabel('Torque (Nm)')
+    ax6.set_title('Computed Torques')
+    ax6.legend()
+    ax6.grid(True)
+    
+    plt.tight_layout()
+    plt.show()
+
+    # endregion
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description='2-Link Arm Simulation')
+    parser.add_argument('-s', '--sim', action='store_true', help='Run simulation')
+    parser.add_argument('-c', '--csv', action='store_true', help='Generate trajectory and save to a csv')
+    parser.add_argument('-p', '--plots', action='store_true', help='Show plots')
+    args = parser.parse_args()
+    
+    if args.sim:
+        sim()
+    elif args.trajectory:
+        print("Running trajectory mode")
+    elif args.plots:
+        plots()
+    else:
+        parser.print_help()
