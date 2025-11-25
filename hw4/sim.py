@@ -5,6 +5,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from typing import NamedTuple
 import argparse
+import csv
 
 dt = 0.01
 
@@ -439,6 +440,42 @@ def plots():
 
     # endregion
 
+def save_csv():
+    arm = Arm()
+
+    # generate motion plan
+    start_state = ArmState(
+        np.array([-np.pi/4, 0]),
+        np.array([0, 0]),
+        np.array([0, 0])
+    )
+    target_state = ArmState(
+        np.array([np.pi/4, np.pi/2]),
+        np.array([0, 0]),
+        np.array([0, 0])
+    )
+    duration = 2.00
+
+    states = arm.trajectory(start_state, target_state, duration)
+    with open('./trajectory.csv', 'w', newline='') as f:
+        writer = csv.writer(f)
+        writer.writerow(['time', 'theta1', 'theta2', 'dtheta1', 'dtheta2', 'ddtheta1', 'ddtheta2'])
+        
+        t = 0
+        for state in states:
+            writer.writerow([
+                t,
+                state.position[0],
+                state.position[1],
+                state.velocity[0],
+                state.velocity[1],
+                state.acceleration[0],
+                state.acceleration[1]
+            ])
+            t += dt
+
+    print(f"Trajectory saved to ./trajectory.csv ({len(states)} points)")
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='2-Link Arm Simulation')
     parser.add_argument('-s', '--sim', action='store_true', help='Run simulation')
@@ -448,8 +485,8 @@ if __name__ == "__main__":
     
     if args.sim:
         sim()
-    elif args.trajectory:
-        print("Running trajectory mode")
+    elif args.csv:
+        save_csv()
     elif args.plots:
         plots()
     else:
